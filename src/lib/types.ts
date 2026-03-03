@@ -135,4 +135,39 @@ export interface Invoice {
 
 export interface BookingWithInvoice extends Booking {
   invoice?: Invoice
+  invoiceRequest?: InvoiceRequest
+}
+
+// PROJ-4: Gäste-Rechnungsformular
+
+export type InvoiceRequestStatus = "pending" | "opened" | "submitted" | "invoice_created"
+
+export interface InvoiceRequest {
+  id: string
+  token: string
+  bookingId: string
+  status: InvoiceRequestStatus
+  firstName: string | null
+  lastName: string | null
+  companyName: string | null
+  street: string | null
+  zip: string | null
+  city: string | null
+  countryCode: string
+  vatId: string | null
+  email: string | null
+  expiresAt: string
+  submittedAt: string | null
+}
+
+export interface GuestBillingFormData {
+  firstName: string
+  lastName: string
+  companyName: string
+  street: string
+  zip: string
+  city: string
+  countryCode: string
+  vatId: string
+  email: string
 }

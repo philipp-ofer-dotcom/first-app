@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { RefreshCw, ExternalLink, FileText, CalendarRange, Loader2 } from "lucide-react"
+import { RefreshCw, ExternalLink, FileText, CalendarRange, Loader2, Link2, Copy, Check } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -28,6 +28,12 @@ import {
 } from "@/components/ui/table"
 
 import type { BookingWithInvoice, InvoiceStatus } from "@/lib/types"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 // -- Helpers ------------------------------------------------------------------
 
@@ -118,6 +124,8 @@ export default function InvoicesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
   const [activeTab, setActiveTab] = useState<TabFilter>("all")
+  const [generatingLinkFor, setGeneratingLinkFor] = useState<string | null>(null)
+  const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [batchOpen, setBatchOpen] = useState(false)
   const [batchFrom, setBatchFrom] = useState("")
   const [batchTo, setBatchTo] = useState("")
@@ -172,6 +180,27 @@ export default function InvoicesPage() {
       console.error("Retry Fehler:", json.error)
     }
     await fetchBookings()
+  }
+
+  async function handleGenerateLink(bookingId: string) {
+    setGeneratingLinkFor(bookingId)
+    try {
+      await fetch("/api/invoice-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingId }),
+      })
+      await fetchBookings()
+    } finally {
+      setGeneratingLinkFor(null)
+    }
+  }
+
+  async function handleCopyLink(token: string) {
+    const url = `${window.location.origin}/invoice-form/${token}`
+    await navigator.clipboard.writeText(url)
+    setCopiedToken(token)
+    setTimeout(() => setCopiedToken(null), 2000)
   }
 
   async function handleBatch() {
@@ -379,6 +408,10 @@ export default function InvoicesPage() {
               <BookingsTable
                 bookings={filteredBookings}
                 renderAction={renderAction}
+                onGenerateLink={handleGenerateLink}
+                onCopyLink={handleCopyLink}
+                generatingLinkFor={generatingLinkFor}
+                copiedToken={copiedToken}
               />
             )}
           </TabsContent>
@@ -390,14 +423,30 @@ export default function InvoicesPage() {
 
 // -- Sub-components -----------------------------------------------------------
 
+const LINK_STATUS_MAP: Record<string, { label: string; className: string }> = {
+  pending: { label: "Versendet", className: "bg-yellow-500/15 text-yellow-700 border-yellow-500/30 dark:text-yellow-400" },
+  opened: { label: "Geoeffnet", className: "bg-blue-500/15 text-blue-700 border-blue-500/30 dark:text-blue-400" },
+  submitted: { label: "Ausgefuellt", className: "bg-green-500/15 text-green-700 border-green-500/30 dark:text-green-400" },
+  invoice_created: { label: "Rechnung erstellt", className: "bg-gray-500/15 text-gray-600 border-gray-500/30 dark:text-gray-400" },
+}
+
 function BookingsTable({
   bookings,
   renderAction,
+  onGenerateLink,
+  onCopyLink,
+  generatingLinkFor,
+  copiedToken,
 }: {
   bookings: BookingWithInvoice[]
   renderAction: (b: BookingWithInvoice) => React.ReactNode
+  onGenerateLink: (bookingId: string) => void
+  onCopyLink: (token: string) => void
+  generatingLinkFor: string | null
+  copiedToken: string | null
 }) {
   return (
+    <TooltipProvider>
     <div className="rounded-md border">
       <Table>
         <TableHeader>
@@ -409,6 +458,7 @@ function BookingsTable({
             <TableHead className="hidden lg:table-cell">Abreise</TableHead>
             <TableHead className="text-right">Betrag</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead className="hidden sm:table-cell">Formular</TableHead>
             <TableHead className="text-right">Aktion</TableHead>
           </TableRow>
         </TableHeader>
@@ -434,6 +484,56 @@ function BookingsTable({
                 {formatCurrency(booking.totalAmount)}
               </TableCell>
               <TableCell>{getStatusBadge(booking)}</TableCell>
+              <TableCell className="hidden sm:table-cell">
+                {booking.bookingStatus !== "cancelled" && (
+                  <div className="flex items-center gap-1.5">
+                    {booking.invoiceRequest ? (
+                      <>
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${LINK_STATUS_MAP[booking.invoiceRequest.status]?.className ?? ""}`}
+                        >
+                          {LINK_STATUS_MAP[booking.invoiceRequest.status]?.label}
+                        </Badge>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6"
+                              onClick={() => onCopyLink(booking.invoiceRequest!.token)}
+                              aria-label="Link kopieren"
+                            >
+                              {copiedToken === booking.invoiceRequest.token ? (
+                                <Check className="h-3 w-3 text-green-500" />
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Link kopieren</TooltipContent>
+                        </Tooltip>
+                      </>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => onGenerateLink(booking.id)}
+                        disabled={generatingLinkFor === booking.id}
+                        aria-label="Formular-Link generieren"
+                      >
+                        {generatingLinkFor === booking.id ? (
+                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                        ) : (
+                          <Link2 className="mr-1 h-3 w-3" />
+                        )}
+                        Link generieren
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </TableCell>
               <TableCell className="text-right">
                 {renderAction(booking)}
               </TableCell>
@@ -442,6 +542,7 @@ function BookingsTable({
         </TableBody>
       </Table>
     </div>
+    </TooltipProvider>
   )
 }
 

@@ -36,6 +36,14 @@ export async function GET() {
           lexware_invoice_number,
           error_message,
           retry_count
+        ),
+        invoice_requests (
+          id,
+          token,
+          status,
+          expires_at,
+          submitted_at,
+          email
         )
       `
       )
@@ -52,6 +60,11 @@ export async function GET() {
       const invoice = Array.isArray(row.invoices)
         ? row.invoices[0]
         : row.invoices
+      const invoiceReq = Array.isArray(
+        (row as unknown as { invoice_requests?: unknown }).invoice_requests
+      )
+        ? ((row as unknown as { invoice_requests: unknown[] }).invoice_requests[0] as { id: string; token: string; status: string; expires_at: string; submitted_at: string | null; email: string | null } | undefined)
+        : ((row as unknown as { invoice_requests?: { id: string; token: string; status: string; expires_at: string; submitted_at: string | null; email: string | null } | null }).invoice_requests ?? undefined)
 
       return {
         id: row.id,
@@ -85,6 +98,17 @@ export async function GET() {
               errorMessage:
                 (invoice as { error_message: string | null }).error_message,
               retryCount: (invoice as { retry_count: number }).retry_count,
+            }
+          : undefined,
+        invoiceRequest: invoiceReq
+          ? {
+              id: invoiceReq.id,
+              token: invoiceReq.token,
+              bookingId: row.id,
+              status: invoiceReq.status,
+              expiresAt: invoiceReq.expires_at,
+              submittedAt: invoiceReq.submitted_at,
+              email: invoiceReq.email,
             }
           : undefined,
       }

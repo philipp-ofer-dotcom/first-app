@@ -1,7 +1,10 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { RefreshCw, ExternalLink, FileText, CalendarRange, Loader2, Link2, Copy, Check } from "lucide-react"
+import {
+  RefreshCw, ExternalLink, FileText, CalendarRange, Loader2,
+  Link2, Copy, Check, Pencil, AlertTriangle,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -9,6 +12,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
 import {
   Dialog,
   DialogContent,
@@ -19,6 +23,21 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   Table,
   TableBody,
   TableCell,
@@ -26,14 +45,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-
-import type { BookingWithInvoice, InvoiceStatus } from "@/lib/types"
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+
+import type { BookingWithInvoice, InvoiceStatus } from "@/lib/types"
 
 // -- Helpers ------------------------------------------------------------------
 
@@ -52,6 +72,21 @@ function formatCurrency(amount: number): string {
     currency: "EUR",
   }).format(amount)
 }
+
+const EU_COUNTRIES = [
+  { code: "DE", name: "Deutschland" },
+  { code: "AT", name: "Oesterreich" },
+  { code: "CH", name: "Schweiz" },
+  { code: "FR", name: "Frankreich" },
+  { code: "IT", name: "Italien" },
+  { code: "NL", name: "Niederlande" },
+  { code: "BE", name: "Belgien" },
+  { code: "PL", name: "Polen" },
+  { code: "ES", name: "Spanien" },
+  { code: "GB", name: "Grossbritannien" },
+  { code: "US", name: "USA" },
+  { code: "OTHER", name: "Anderes Land" },
+]
 
 type TabFilter = "all" | InvoiceStatus
 
@@ -75,10 +110,7 @@ function getStatusBadge(booking: BookingWithInvoice) {
 
   const status = booking.invoice?.status ?? "pending"
 
-  const map: Record<
-    InvoiceStatus,
-    { label: string; className: string }
-  > = {
+  const map: Record<InvoiceStatus, { label: string; className: string }> = {
     pending: {
       label: "Ausstehend",
       className: "bg-yellow-500/15 text-yellow-700 border-yellow-500/30 dark:text-yellow-400",
@@ -117,6 +149,50 @@ function getStatusBadge(booking: BookingWithInvoice) {
   )
 }
 
+// -- Invoice Editor Sheet fields ---------------------------------------------
+
+interface BillingFields {
+  firstName: string
+  lastName: string
+  companyName: string
+  street: string
+  zip: string
+  city: string
+  countryCode: string
+  vatId: string
+  email: string
+}
+
+function emptyBillingFields(): BillingFields {
+  return {
+    firstName: "",
+    lastName: "",
+    companyName: "",
+    street: "",
+    zip: "",
+    city: "",
+    countryCode: "DE",
+    vatId: "",
+    email: "",
+  }
+}
+
+function bookingToBillingFields(booking: BookingWithInvoice): BillingFields {
+  const req = booking.invoiceRequest
+  if (!req) return emptyBillingFields()
+  return {
+    firstName: req.firstName ?? "",
+    lastName: req.lastName ?? "",
+    companyName: req.companyName ?? "",
+    street: req.street ?? "",
+    zip: req.zip ?? "",
+    city: req.city ?? "",
+    countryCode: req.countryCode ?? "DE",
+    vatId: req.vatId ?? "",
+    email: req.email ?? "",
+  }
+}
+
 // -- Component ----------------------------------------------------------------
 
 export default function InvoicesPage() {
@@ -131,6 +207,14 @@ export default function InvoicesPage() {
   const [batchTo, setBatchTo] = useState("")
   const [isBatching, setIsBatching] = useState(false)
   const [batchResult, setBatchResult] = useState<{ scheduled: number; skipped: number } | null>(null)
+
+  // Editor sheet state
+  const [editorBooking, setEditorBooking] = useState<BookingWithInvoice | null>(null)
+  const [editorFields, setEditorFields] = useState<BillingFields>(emptyBillingFields())
+  const [isSavingEditor, setIsSavingEditor] = useState(false)
+  const [isStornoLoading, setIsStornoLoading] = useState(false)
+  const [editorError, setEditorError] = useState<string | null>(null)
+  const [editorSuccess, setEditorSuccess] = useState(false)
 
   const fetchBookings = useCallback(async () => {
     setIsLoading(true)
@@ -223,6 +307,69 @@ export default function InvoicesPage() {
     }
   }
 
+  function openEditor(booking: BookingWithInvoice) {
+    setEditorBooking(booking)
+    setEditorFields(bookingToBillingFields(booking))
+    setEditorError(null)
+    setEditorSuccess(false)
+  }
+
+  function closeEditor() {
+    setEditorBooking(null)
+  }
+
+  async function handleSaveEditor() {
+    if (!editorBooking) return
+    setIsSavingEditor(true)
+    setEditorError(null)
+    setEditorSuccess(false)
+    try {
+      const res = await fetch(`/api/invoice-requests/${editorBooking.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editorFields),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setEditorError(json.error ?? "Fehler beim Speichern")
+        return
+      }
+      setEditorSuccess(true)
+      await fetchBookings()
+      // Refresh editor booking state
+      setTimeout(() => setEditorSuccess(false), 3000)
+    } finally {
+      setIsSavingEditor(false)
+    }
+  }
+
+  async function handleStornoRecreate() {
+    if (!editorBooking) return
+    setIsStornoLoading(true)
+    setEditorError(null)
+    try {
+      // Save the current billing fields first
+      await fetch(`/api/invoice-requests/${editorBooking.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editorFields),
+      })
+      // Then trigger storno + recreate
+      const res = await fetch(`/api/invoices/${editorBooking.id}/storno-recreate`, {
+        method: "POST",
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setEditorError(json.error ?? "Storno fehlgeschlagen")
+        return
+      }
+      await fetchBookings()
+      closeEditor()
+    } finally {
+      setIsStornoLoading(false)
+    }
+  }
+
   const filteredBookings = bookings.filter((b) => {
     if (activeTab === "all") return true
     if (b.bookingStatus === "cancelled") return activeTab === "cancelled"
@@ -290,6 +437,8 @@ export default function InvoicesPage() {
 
     return null
   }
+
+  const invoiceCreated = editorBooking?.invoice?.status === "created"
 
   return (
     <div className="space-y-6">
@@ -410,6 +559,7 @@ export default function InvoicesPage() {
                 renderAction={renderAction}
                 onGenerateLink={handleGenerateLink}
                 onCopyLink={handleCopyLink}
+                onEdit={openEditor}
                 generatingLinkFor={generatingLinkFor}
                 copiedToken={copiedToken}
               />
@@ -417,6 +567,203 @@ export default function InvoicesPage() {
           </TabsContent>
         ))}
       </Tabs>
+
+      {/* Invoice Editor Sheet */}
+      <Sheet open={!!editorBooking} onOpenChange={(open) => { if (!open) closeEditor() }}>
+        <SheetContent className="sm:max-w-lg overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Rechnungsdaten bearbeiten</SheetTitle>
+            <SheetDescription>
+              {editorBooking && (
+                <>
+                  {editorBooking.guestName} · {editorBooking.propertyName}
+                  <br />
+                  {formatDate(editorBooking.checkinDate)} – {formatDate(editorBooking.checkoutDate)}
+                </>
+              )}
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="mt-6 space-y-5">
+            {/* Warning if invoice already created */}
+            {invoiceCreated && (
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Fuer diese Buchung wurde bereits eine Rechnung in Lexware erstellt
+                  ({editorBooking?.invoice?.lexwareInvoiceNumber ?? editorBooking?.invoice?.lexwareInvoiceId}).
+                  Aenderungen erfordern eine Stornierung und Neuerstellung.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {editorError && (
+              <Alert variant="destructive">
+                <AlertDescription>{editorError}</AlertDescription>
+              </Alert>
+            )}
+
+            {editorSuccess && (
+              <Alert className="border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-400">
+                <AlertDescription>Rechnungsdaten gespeichert.</AlertDescription>
+              </Alert>
+            )}
+
+            {/* Name */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Kontaktperson</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="editor-firstName">Vorname</Label>
+                  <Input
+                    id="editor-firstName"
+                    value={editorFields.firstName}
+                    onChange={(e) => setEditorFields((p) => ({ ...p, firstName: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="editor-lastName">Nachname</Label>
+                  <Input
+                    id="editor-lastName"
+                    value={editorFields.lastName}
+                    onChange={(e) => setEditorFields((p) => ({ ...p, lastName: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Company */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium">
+                Unternehmen <span className="text-muted-foreground font-normal">(optional)</span>
+              </p>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="editor-companyName">Firmenname</Label>
+                  <Input
+                    id="editor-companyName"
+                    value={editorFields.companyName}
+                    onChange={(e) => setEditorFields((p) => ({ ...p, companyName: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="editor-vatId">USt-IdNr.</Label>
+                  <Input
+                    id="editor-vatId"
+                    value={editorFields.vatId}
+                    onChange={(e) => setEditorFields((p) => ({ ...p, vatId: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Address */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Rechnungsadresse</p>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="editor-street">Strasse und Hausnummer</Label>
+                  <Input
+                    id="editor-street"
+                    value={editorFields.street}
+                    onChange={(e) => setEditorFields((p) => ({ ...p, street: e.target.value }))}
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="editor-zip">PLZ</Label>
+                    <Input
+                      id="editor-zip"
+                      value={editorFields.zip}
+                      onChange={(e) => setEditorFields((p) => ({ ...p, zip: e.target.value }))}
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <Label htmlFor="editor-city">Ort</Label>
+                    <Input
+                      id="editor-city"
+                      value={editorFields.city}
+                      onChange={(e) => setEditorFields((p) => ({ ...p, city: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="editor-countryCode">Land</Label>
+                  <Select
+                    value={editorFields.countryCode}
+                    onValueChange={(v) => setEditorFields((p) => ({ ...p, countryCode: v }))}
+                  >
+                    <SelectTrigger id="editor-countryCode">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EU_COUNTRIES.map((c) => (
+                        <SelectItem key={c.code} value={c.code}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Email */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Rechnungsversand</p>
+              <div className="space-y-1.5">
+                <Label htmlFor="editor-email">E-Mail-Adresse</Label>
+                <Input
+                  id="editor-email"
+                  type="email"
+                  value={editorFields.email}
+                  onChange={(e) => setEditorFields((p) => ({ ...p, email: e.target.value }))}
+                />
+              </div>
+            </div>
+          </div>
+
+          <SheetFooter className="mt-6 flex-col gap-2">
+            {/* Storno + Recreate button (only when invoice already created) */}
+            {invoiceCreated && (
+              <Button
+                variant="destructive"
+                className="w-full"
+                onClick={handleStornoRecreate}
+                disabled={isStornoLoading || isSavingEditor}
+              >
+                {isStornoLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isStornoLoading ? "Wird storniert..." : "Stornieren & Neu erstellen"}
+              </Button>
+            )}
+
+            <div className="flex gap-2 w-full">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={closeEditor}
+                disabled={isSavingEditor || isStornoLoading}
+              >
+                Abbrechen
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleSaveEditor}
+                disabled={isSavingEditor || isStornoLoading}
+              >
+                {isSavingEditor && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isSavingEditor ? "Speichern..." : "Speichern"}
+              </Button>
+            </div>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
@@ -435,6 +782,7 @@ function BookingsTable({
   renderAction,
   onGenerateLink,
   onCopyLink,
+  onEdit,
   generatingLinkFor,
   copiedToken,
 }: {
@@ -442,6 +790,7 @@ function BookingsTable({
   renderAction: (b: BookingWithInvoice) => React.ReactNode
   onGenerateLink: (bookingId: string) => void
   onCopyLink: (token: string) => void
+  onEdit: (booking: BookingWithInvoice) => void
   generatingLinkFor: string | null
   copiedToken: string | null
 }) {
@@ -535,7 +884,25 @@ function BookingsTable({
                 )}
               </TableCell>
               <TableCell className="text-right">
-                {renderAction(booking)}
+                <div className="flex items-center justify-end gap-1">
+                  {booking.bookingStatus !== "cancelled" && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          onClick={() => onEdit(booking)}
+                          aria-label="Rechnungsdaten bearbeiten"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Rechnungsdaten bearbeiten</TooltipContent>
+                    </Tooltip>
+                  )}
+                  {renderAction(booking)}
+                </div>
               </TableCell>
             </TableRow>
           ))}

@@ -10,6 +10,8 @@ import {
   FileText,
   Clock,
   LogOut,
+  Receipt,
+  FolderOpen,
 } from "lucide-react"
 
 import {
@@ -37,6 +39,16 @@ const navItems = [
     title: "Rechnungen",
     href: "/invoices",
     icon: FileText,
+  },
+  {
+    title: "Belege",
+    href: "/receipts",
+    icon: Receipt,
+  },
+  {
+    title: "Dokumente",
+    href: "/documents",
+    icon: FolderOpen,
   },
   {
     title: "Integrationen",

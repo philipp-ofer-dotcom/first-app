@@ -129,6 +129,7 @@ export interface Invoice {
   status: InvoiceStatus
   scheduledFor: string | null
   lexwareInvoiceId: string | null
+  lexwareInvoiceNumber: string | null
   errorMessage: string | null
   retryCount: number
 }
@@ -158,6 +159,53 @@ export interface InvoiceRequest {
   email: string | null
   expiresAt: string
   submittedAt: string | null
+}
+
+// PROJ-5: Beleg-Download
+
+export type ReceiptPlatform = "airbnb" | "booking" | "smoobu" | "manual"
+
+export type ReceiptStatus =
+  | "pending"
+  | "downloading"
+  | "downloaded"
+  | "error"
+  | "transferred"
+
+export interface Receipt {
+  id: string
+  platform: ReceiptPlatform
+  bookingReference: string | null
+  bookingId: string | null
+  status: ReceiptStatus
+  fileName: string | null
+  fileSizeBytes: number | null
+  receiptDate: string | null
+  amount: number | null
+  errorMessage: string | null
+  notes: string | null
+  transferredAt: string | null
+  lexwareDocumentId: string | null
+  createdAt: string
+  updatedAt: string
+  booking: {
+    smoobuBookingId: string
+    guestName: string
+    checkinDate: string
+    checkoutDate: string
+    propertyName: string
+  } | null
+}
+
+export interface PlatformCredentials {
+  platform: string
+  hasEmail: boolean
+  email: string | null
+  n8nWebhookUrl: string | null
+  lastLoginAt: string | null
+  lastError: string | null
+  isActive: boolean
+  updatedAt: string
 }
 
 export interface GuestBillingFormData {

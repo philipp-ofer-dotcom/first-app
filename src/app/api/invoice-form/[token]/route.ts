@@ -10,6 +10,26 @@ function getServiceSupabase() {
   )
 }
 
+// Cancel an existing Lexware invoice (creates a Storno on their side)
+async function cancelLexwareInvoice(apiKey: string, lexwareInvoiceId: string): Promise<boolean> {
+  try {
+    const res = await fetch(
+      `https://api.lexware.io/v1/invoices/${lexwareInvoiceId}/cancel`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(20000),
+      }
+    )
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 const submitSchema = z.object({
   firstName: z.string().min(1, "Vorname ist erforderlich"),
   lastName: z.string().min(1, "Nachname ist erforderlich"),
@@ -191,16 +211,48 @@ export async function POST(
 
     const { data: invoice } = await supabase
       .from("invoices")
-      .select("id")
+      .select("id, status, lexware_invoice_id, lexware_invoice_number")
       .eq("booking_id", req.booking_id)
       .limit(1)
       .single()
 
     if (invoice) {
-      await supabase
-        .from("invoices")
-        .update({ guest_billing_data: billingData, updated_at: now })
-        .eq("id", invoice.id)
+      // If invoice was already created in Lexware, storno it and re-queue
+      if (invoice.status === "created" && invoice.lexware_invoice_id) {
+        // Get Lexware API key
+        const { data: integration } = await supabase
+          .from("integration_settings")
+          .select("api_key_encrypted")
+          .eq("platform", "lexware")
+          .limit(1)
+          .single()
+
+        if (integration) {
+          const { decrypt } = await import("@/lib/encryption")
+          const lexwareApiKey = decrypt(integration.api_key_encrypted)
+          await cancelLexwareInvoice(lexwareApiKey, invoice.lexware_invoice_id)
+        }
+
+        // Reset invoice to 'ready' with new billing data so it gets recreated
+        await supabase
+          .from("invoices")
+          .update({
+            status: "ready",
+            scheduled_for: now,
+            lexware_invoice_id: null,
+            lexware_invoice_number: null,
+            error_message: `Storniert durch Gast: ${invoice.lexware_invoice_number ?? invoice.lexware_invoice_id}`,
+            guest_billing_data: billingData,
+            updated_at: now,
+          })
+          .eq("id", invoice.id)
+      } else {
+        // Just update the billing data for future invoice creation
+        await supabase
+          .from("invoices")
+          .update({ guest_billing_data: billingData, updated_at: now })
+          .eq("id", invoice.id)
+      }
     }
 
     return NextResponse.json({ success: true })

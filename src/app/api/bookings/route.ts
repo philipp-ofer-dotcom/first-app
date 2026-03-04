@@ -43,7 +43,15 @@ export async function GET() {
           status,
           expires_at,
           submitted_at,
-          email
+          email,
+          first_name,
+          last_name,
+          company_name,
+          street,
+          zip,
+          city,
+          country_code,
+          vat_id
         )
       `
       )
@@ -60,11 +68,19 @@ export async function GET() {
       const invoice = Array.isArray(row.invoices)
         ? row.invoices[0]
         : row.invoices
+      type InvoiceReqRow = {
+        id: string; token: string; status: string; expires_at: string;
+        submitted_at: string | null; email: string | null;
+        first_name: string | null; last_name: string | null;
+        company_name: string | null; street: string | null;
+        zip: string | null; city: string | null;
+        country_code: string | null; vat_id: string | null;
+      }
       const invoiceReq = Array.isArray(
         (row as unknown as { invoice_requests?: unknown }).invoice_requests
       )
-        ? ((row as unknown as { invoice_requests: unknown[] }).invoice_requests[0] as { id: string; token: string; status: string; expires_at: string; submitted_at: string | null; email: string | null } | undefined)
-        : ((row as unknown as { invoice_requests?: { id: string; token: string; status: string; expires_at: string; submitted_at: string | null; email: string | null } | null }).invoice_requests ?? undefined)
+        ? ((row as unknown as { invoice_requests: unknown[] }).invoice_requests[0] as InvoiceReqRow | undefined)
+        : ((row as unknown as { invoice_requests?: InvoiceReqRow | null }).invoice_requests ?? undefined)
 
       return {
         id: row.id,
@@ -109,6 +125,14 @@ export async function GET() {
               expiresAt: invoiceReq.expires_at,
               submittedAt: invoiceReq.submitted_at,
               email: invoiceReq.email,
+              firstName: invoiceReq.first_name,
+              lastName: invoiceReq.last_name,
+              companyName: invoiceReq.company_name,
+              street: invoiceReq.street,
+              zip: invoiceReq.zip,
+              city: invoiceReq.city,
+              countryCode: invoiceReq.country_code ?? "DE",
+              vatId: invoiceReq.vat_id,
             }
           : undefined,
       }

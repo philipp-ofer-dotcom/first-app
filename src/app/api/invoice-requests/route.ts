@@ -45,9 +45,9 @@ export async function POST(request: Request) {
       )
     }
 
-    // Expires: checkout_date + 7 days
+    // Expires: checkout_date + 3 months
     const expiresAt = new Date(booking.checkout_date + "T23:59:59Z")
-    expiresAt.setDate(expiresAt.getDate() + 7)
+    expiresAt.setMonth(expiresAt.getMonth() + 3)
 
     // Generate a new secure token (two UUIDs concatenated = 256 bits entropy)
     const token = `${crypto.randomUUID().replace(/-/g, "")}${crypto.randomUUID().replace(/-/g, "")}`

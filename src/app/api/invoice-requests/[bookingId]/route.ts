@@ -15,7 +15,7 @@ const updateSchema = z.object({
 })
 
 // PUT /api/invoice-requests/[bookingId]
-// Admin can edit billing data before invoice is created.
+// Admin can edit billing data at any point (storno handled separately).
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ bookingId: string }> }
@@ -42,7 +42,7 @@ export async function PUT(
 
     const { data: req, error: fetchError } = await supabase
       .from("invoice_requests")
-      .select("id, status")
+      .select("id, status, first_name, last_name")
       .eq("booking_id", bookingId)
       .single()
 
@@ -50,15 +50,10 @@ export async function PUT(
       return NextResponse.json({ error: "Kein Formular-Link fuer diese Buchung" }, { status: 404 })
     }
 
-    if (req.status === "invoice_created") {
-      return NextResponse.json(
-        { error: "Rechnungsdaten koennen nach Rechnungserstellung nicht mehr geaendert werden" },
-        { status: 409 }
-      )
-    }
-
     const d = parsed.data
-    const { error: updateError } = await supabase
+    const now = new Date().toISOString()
+
+    await supabase
       .from("invoice_requests")
       .update({
         ...(d.firstName !== undefined && { first_name: d.firstName }),
@@ -70,11 +65,36 @@ export async function PUT(
         ...(d.countryCode !== undefined && { country_code: d.countryCode }),
         ...(d.vatId !== undefined && { vat_id: d.vatId }),
         ...(d.email !== undefined && { email: d.email }),
-        updated_at: new Date().toISOString(),
+        updated_at: now,
       })
       .eq("id", req.id)
 
-    if (updateError) throw updateError
+    // Sync billing data to invoice record so process-scheduled uses it
+    const firstName = d.firstName ?? req.first_name ?? ""
+    const lastName = d.lastName ?? req.last_name ?? ""
+    const billingData = {
+      name: `${firstName} ${lastName}`.trim(),
+      companyName: d.companyName ?? undefined,
+      street: d.street ?? undefined,
+      zip: d.zip ?? undefined,
+      city: d.city ?? undefined,
+      countryCode: d.countryCode ?? undefined,
+    }
+
+    const { data: invoice } = await supabase
+      .from("invoices")
+      .select("id, status")
+      .eq("booking_id", bookingId)
+      .limit(1)
+      .single()
+
+    // Only update guest_billing_data if invoice hasn't been sent to Lexware yet
+    if (invoice && invoice.status !== "created") {
+      await supabase
+        .from("invoices")
+        .update({ guest_billing_data: billingData, updated_at: now })
+        .eq("id", invoice.id)
+    }
 
     return NextResponse.json({ success: true })
   } catch (err) {

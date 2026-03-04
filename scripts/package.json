@@ -1,0 +1,14 @@
+{
+  "name": "fewo-scripts",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Lokale Scripts fuer den automatischen Beleg-Download",
+  "scripts": {
+    "airbnb": "node airbnb-receipt.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "otpauth": "^9.3.5",
+    "playwright": "^1.43.0"
+  }
+}

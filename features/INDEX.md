@@ -15,9 +15,9 @@
 | PROJ-1 | Plattform-Integration & Grundeinstellungen | In Progress | [spec](PROJ-1-plattform-integration-grundeinstellungen.md) | 2026-03-02 |
 | PROJ-2 | City Tax Konfiguration | In Progress | [spec](PROJ-2-city-tax-konfiguration.md) | 2026-03-02 |
 | PROJ-3 | Automatische Rechnungserstellung (Smoobu → Lexware) | In Progress | [spec](PROJ-3-automatische-rechnungserstellung.md) | 2026-03-02 |
-| PROJ-4 | Gäste-Rechnungsformular (öffentlicher Link) | Planned | [spec](PROJ-4-gaeste-rechnungsformular.md) | 2026-03-02 |
-| PROJ-5 | Beleg-Download (Airbnb & Booking.com) | Planned | [spec](PROJ-5-beleg-download.md) | 2026-03-02 |
-| PROJ-6 | Dokument-Übersicht & Lexware-Transfer-Freigabe | Planned | [spec](PROJ-6-dokument-uebersicht-lexware-transfer.md) | 2026-03-02 |
+| PROJ-4 | Gäste-Rechnungsformular (öffentlicher Link) | In Progress | [spec](PROJ-4-gaeste-rechnungsformular.md) | 2026-03-02 |
+| PROJ-5 | Beleg-Download (Airbnb & Booking.com) | In Progress | [spec](PROJ-5-beleg-download.md) | 2026-03-02 |
+| PROJ-6 | Dokument-Übersicht & Lexware-Transfer-Freigabe | In Progress | [spec](PROJ-6-dokument-uebersicht-lexware-transfer.md) | 2026-03-02 |
 
 <!-- Add features above this line -->
 

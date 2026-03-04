@@ -771,9 +771,9 @@ export default function InvoicesPage() {
 // -- Sub-components -----------------------------------------------------------
 
 const LINK_STATUS_MAP: Record<string, { label: string; className: string }> = {
-  pending: { label: "Versendet", className: "bg-yellow-500/15 text-yellow-700 border-yellow-500/30 dark:text-yellow-400" },
-  opened: { label: "Geoeffnet", className: "bg-blue-500/15 text-blue-700 border-blue-500/30 dark:text-blue-400" },
-  submitted: { label: "Ausgefuellt", className: "bg-green-500/15 text-green-700 border-green-500/30 dark:text-green-400" },
+  pending: { label: "Link erstellt", className: "bg-yellow-500/15 text-yellow-700 border-yellow-500/30 dark:text-yellow-400" },
+  opened: { label: "Geöffnet", className: "bg-blue-500/15 text-blue-700 border-blue-500/30 dark:text-blue-400" },
+  submitted: { label: "Ausgefüllt", className: "bg-green-500/15 text-green-700 border-green-500/30 dark:text-green-400" },
   invoice_created: { label: "Rechnung erstellt", className: "bg-gray-500/15 text-gray-600 border-gray-500/30 dark:text-gray-400" },
 }
 
@@ -860,7 +860,15 @@ function BookingsTable({
                               )}
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>Link kopieren</TooltipContent>
+                          <TooltipContent className="max-w-xs">
+                            <p className="font-medium mb-1">Link kopieren</p>
+                            <p className="text-xs text-muted-foreground break-all">
+                              {typeof window !== "undefined"
+                                ? `${window.location.origin}/invoice-form/${booking.invoiceRequest.token}`
+                                : `/invoice-form/${booking.invoiceRequest.token}`}
+                            </p>
+                            <p className="text-xs mt-1 text-amber-600">⚠ Kein automatischer E-Mail-Versand — Link manuell an Gast weiterleiten</p>
+                          </TooltipContent>
                         </Tooltip>
                       </>
                     ) : (

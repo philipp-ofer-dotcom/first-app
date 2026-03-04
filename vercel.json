@@ -1,8 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/invoices/process-scheduled",
-      "schedule": "*/15 * * * *"
-    }
-  ]
-}
+{}

@@ -3,6 +3,15 @@ import { createServerSupabaseClient } from "@/lib/supabase-server"
 import { decrypt } from "@/lib/encryption"
 import { calculateScheduledFor } from "@/lib/invoice-utils"
 import type { TimingType, InvoiceMode } from "@/lib/types"
+import { logger } from "@/lib/logger"
+
+interface SmoobuPriceElement {
+  type: string    // e.g. "base", "cleaning", "cityTax", "discount", "extraPerson", ...
+  name: string
+  amount: number
+  quantity: number
+  currencyCode: string
+}
 
 interface SmoobuReservation {
   id: number
@@ -14,7 +23,9 @@ interface SmoobuReservation {
   adults: number
   children: number
   price: number
+  "is-blocked-booking"?: boolean
   type: string
+  priceElements?: SmoobuPriceElement[]
 }
 
 interface SmoobuReservationsResponse {
@@ -33,6 +44,7 @@ async function fetchSmoobuReservations(
   const params = new URLSearchParams({
     page: String(page),
     pageSize: String(perPage),
+    includePriceElements: "true",  // needed for cleaning fee and city tax breakdown
   })
   const res = await fetch(`https://login.smoobu.com/api/reservations?${params}`, {
     headers: { "Api-Key": apiKey, "Content-Type": "application/json" },
@@ -106,7 +118,18 @@ export async function POST() {
       totalPages = response.pageCount
 
       for (const res of response.bookings ?? []) {
-        if (res.type !== "reservation") continue
+        // Skip blocked dates (owner-blocked, not actual guest bookings)
+        if (res["is-blocked-booking"] === true) {
+          skipped++
+          continue
+        }
+
+        // Skip unknown types that are not bookings or their modifications
+        const validTypes = ["reservation", "modification", "cancellation"]
+        if (!validTypes.includes(res.type)) {
+          skipped++
+          continue
+        }
 
         const property = propertyBySmoobuId.get(String(res.apartment?.id))
         if (!property) {
@@ -114,8 +137,13 @@ export async function POST() {
           continue
         }
 
-        const bookingStatus =
-          res.type === "reservation" ? "confirmed" : "confirmed"
+        // Determine booking status from type
+        const bookingStatus = res.type === "cancellation" ? "cancelled" : "confirmed"
+
+        // Extract cleaning fee from priceElements if available
+        const cleaningFee = res.priceElements
+          ? (res.priceElements.find((el) => el.type === "cleaning")?.amount ?? null)
+          : null
 
         // Upsert booking
         const { data: booking, error: upsertError } = await supabase
@@ -131,6 +159,7 @@ export async function POST() {
               total_amount: res.price || 0,
               num_guests: (res.adults || 1) + (res.children || 0),
               booking_status: bookingStatus,
+              cleaning_fee: cleaningFee,
               synced_at: new Date().toISOString(),
             },
             { onConflict: "smoobu_booking_id", ignoreDuplicates: false }
@@ -196,6 +225,10 @@ export async function POST() {
       page++
     } while (page <= totalPages)
 
+    await logger.info("sync", "bookings_synced", `Smoobu Sync abgeschlossen: ${synced} Buchungen importiert, ${skipped} übersprungen`, {
+      details: { synced, skipped, errors: errors.length },
+    })
+
     return NextResponse.json({
       success: true,
       synced,
@@ -203,7 +236,11 @@ export async function POST() {
       errors: errors.length > 0 ? errors : undefined,
     })
   } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : "Unbekannter Fehler"
     console.error("POST /api/bookings/sync error:", err)
+    await logger.error("sync", "bookings_sync_failed", `Smoobu Sync fehlgeschlagen: ${errorMsg}`, {
+      details: { error: errorMsg },
+    })
     return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 })
   }
 }

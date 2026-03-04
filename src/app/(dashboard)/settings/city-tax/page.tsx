@@ -74,23 +74,11 @@ export default function CityTaxPage() {
   React.useEffect(() => { loadProperties() }, [loadProperties])
 
   async function handleToggleCityTax(propertyId: string, active: boolean) {
-    const property = properties.find((p) => p.id === propertyId)
-    if (!property) return
-    const config = property.cityTaxConfig
     try {
       await fetch(`/api/city-tax/${propertyId}`, {
-        method: "PUT",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          isActive: active,
-          taxLabel: config?.taxLabel ?? "",
-          amountPerPersonNight: config?.amountPerPersonNight ?? 0,
-          showSeparately: config?.showSeparately ?? true,
-          validFrom: config?.validFrom ?? new Date().toISOString().split("T")[0],
-          ageGroups: (config?.ageGroups ?? []).map((ag, i) => ({
-            ageFrom: ag.ageFrom, ageTo: ag.ageTo, percentage: ag.percentage, sortOrder: i,
-          })),
-        }),
+        body: JSON.stringify({ isActive: active }),
       })
     } finally {
       loadProperties()

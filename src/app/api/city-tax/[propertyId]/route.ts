@@ -2,6 +2,59 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { createServerSupabaseClient } from "@/lib/supabase-server"
 
+// PATCH /api/city-tax/[propertyId]
+// Toggles is_active on the CURRENT config row — no new history entry created.
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ propertyId: string }> }
+) {
+  try {
+    const supabase = await createServerSupabaseClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: "Nicht authentifiziert" }, { status: 401 })
+
+    const { propertyId } = await params
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(propertyId)) {
+      return NextResponse.json({ error: "Ungültige Property-ID" }, { status: 400 })
+    }
+
+    const body = await request.json()
+    const { isActive } = z.object({ isActive: z.boolean() }).parse(body)
+
+    const today = new Date().toISOString().split("T")[0]
+
+    // Find the most recent config that is currently in effect (valid_from <= today)
+    const { data: current, error: fetchErr } = await supabase
+      .from("city_tax_configs")
+      .select("id")
+      .eq("property_id", propertyId)
+      .lte("valid_from", today)
+      .order("valid_from", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single()
+
+    if (fetchErr || !current) {
+      return NextResponse.json({ error: "Keine aktive Konfiguration gefunden" }, { status: 404 })
+    }
+
+    const { error: updateErr } = await supabase
+      .from("city_tax_configs")
+      .update({ is_active: isActive })
+      .eq("id", current.id)
+
+    if (updateErr) {
+      return NextResponse.json({ error: "Fehler beim Aktualisieren" }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error("PATCH /api/city-tax/[propertyId] error:", err)
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 })
+  }
+}
+
 const ageGroupSchema = z.object({
   ageFrom: z.number().int().min(0).nullable(),
   ageTo: z.number().int().min(0).nullable(),

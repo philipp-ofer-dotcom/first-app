@@ -55,6 +55,7 @@ export default function CityTaxPage() {
   const [copyResult, setCopyResult] = React.useState<string | null>(null)
 
   const [expandedTimelines, setExpandedTimelines] = React.useState<Set<string>>(new Set())
+  const [togglingIds, setTogglingIds] = React.useState<Set<string>>(new Set())
 
   const loadProperties = React.useCallback(async () => {
     try {
@@ -74,14 +75,29 @@ export default function CityTaxPage() {
   React.useEffect(() => { loadProperties() }, [loadProperties])
 
   async function handleToggleCityTax(propertyId: string, active: boolean) {
+    // Optimistic update — flip the switch immediately, no reload flicker
+    setProperties((prev) =>
+      prev.map((p) =>
+        p.id !== propertyId || !p.cityTaxConfig
+          ? p
+          : { ...p, cityTaxConfig: { ...p.cityTaxConfig, isActive: active } }
+      )
+    )
+    setTogglingIds((prev) => new Set(prev).add(propertyId))
     try {
-      await fetch(`/api/city-tax/${propertyId}`, {
+      const res = await fetch(`/api/city-tax/${propertyId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: active }),
       })
+      if (!res.ok) {
+        // Revert on failure
+        await loadProperties()
+      }
+    } catch {
+      await loadProperties()
     } finally {
-      loadProperties()
+      setTogglingIds((prev) => { const next = new Set(prev); next.delete(propertyId); return next })
     }
   }
 
@@ -229,6 +245,7 @@ export default function CityTaxPage() {
                       <Switch
                         checked={isActive}
                         onCheckedChange={(checked) => handleToggleCityTax(property.id, checked)}
+                        disabled={togglingIds.has(property.id)}
                         aria-label={`City Tax für ${property.name}`}
                       />
                       <div className="min-w-0">

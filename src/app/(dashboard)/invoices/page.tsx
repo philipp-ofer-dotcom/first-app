@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import {
   RefreshCw, ExternalLink, FileText, CalendarRange, Loader2,
   Link2, Copy, Check, Pencil, AlertTriangle,
 } from "lucide-react"
+import { SortableTableHead, type SortDirection } from "@/components/sortable-table-head"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -200,6 +201,19 @@ export default function InvoicesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
   const [activeTab, setActiveTab] = useState<TabFilter>("all")
+  const [sortField, setSortField] = useState<string | null>(null)
+  const [sortDir, setSortDir] = useState<SortDirection>(null)
+
+  function toggleSort(field: string) {
+    if (sortField === field) {
+      if (sortDir === "asc") { setSortDir("desc") }
+      else if (sortDir === "desc") { setSortDir(null); setSortField(null) }
+      else { setSortDir("asc") }
+    } else {
+      setSortField(field)
+      setSortDir("asc")
+    }
+  }
   const [generatingLinkFor, setGeneratingLinkFor] = useState<string | null>(null)
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [batchOpen, setBatchOpen] = useState(false)
@@ -370,12 +384,29 @@ export default function InvoicesPage() {
     }
   }
 
-  const filteredBookings = bookings.filter((b) => {
-    if (activeTab === "all") return true
-    if (b.bookingStatus === "cancelled") return activeTab === "cancelled"
-    const status = b.invoice?.status ?? "pending"
-    return status === activeTab
-  })
+  const filteredBookings = useMemo(() => {
+    const filtered = bookings.filter((b) => {
+      if (activeTab === "all") return true
+      if (b.bookingStatus === "cancelled") return activeTab === "cancelled"
+      const status = b.invoice?.status ?? "pending"
+      return status === activeTab
+    })
+
+    if (!sortField || !sortDir) return filtered
+
+    return [...filtered].sort((a, b) => {
+      let av: string | number = ""
+      let bv: string | number = ""
+      if (sortField === "smoobuId") { av = a.smoobuBookingId; bv = b.smoobuBookingId }
+      else if (sortField === "guestName") { av = a.guestName; bv = b.guestName }
+      else if (sortField === "property") { av = a.propertyName ?? ""; bv = b.propertyName ?? "" }
+      else if (sortField === "checkin") { av = a.checkinDate; bv = b.checkinDate }
+      else if (sortField === "checkout") { av = a.checkoutDate; bv = b.checkoutDate }
+      else if (sortField === "amount") { av = a.totalAmount; bv = b.totalAmount }
+      if (typeof av === "number" && typeof bv === "number") return sortDir === "asc" ? av - bv : bv - av
+      return sortDir === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av))
+    })
+  }, [bookings, activeTab, sortField, sortDir])
 
   function renderAction(booking: BookingWithInvoice) {
     if (booking.bookingStatus === "cancelled") {
@@ -562,6 +593,9 @@ export default function InvoicesPage() {
                 onEdit={openEditor}
                 generatingLinkFor={generatingLinkFor}
                 copiedToken={copiedToken}
+                sortField={sortField}
+                sortDir={sortDir}
+                onSort={toggleSort}
               />
             )}
           </TabsContent>
@@ -785,6 +819,9 @@ function BookingsTable({
   onEdit,
   generatingLinkFor,
   copiedToken,
+  sortField,
+  sortDir,
+  onSort,
 }: {
   bookings: BookingWithInvoice[]
   renderAction: (b: BookingWithInvoice) => React.ReactNode
@@ -793,6 +830,9 @@ function BookingsTable({
   onEdit: (booking: BookingWithInvoice) => void
   generatingLinkFor: string | null
   copiedToken: string | null
+  sortField: string | null
+  sortDir: SortDirection
+  onSort: (field: string) => void
 }) {
   return (
     <TooltipProvider>
@@ -800,12 +840,12 @@ function BookingsTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Buchungs-ID</TableHead>
-            <TableHead>Gastname</TableHead>
-            <TableHead className="hidden md:table-cell">Objekt</TableHead>
-            <TableHead className="hidden lg:table-cell">Anreise</TableHead>
-            <TableHead className="hidden lg:table-cell">Abreise</TableHead>
-            <TableHead className="text-right">Betrag</TableHead>
+            <SortableTableHead label="Buchungs-ID" field="smoobuId" currentField={sortField} currentDir={sortDir} onSort={onSort} />
+            <SortableTableHead label="Gastname" field="guestName" currentField={sortField} currentDir={sortDir} onSort={onSort} />
+            <SortableTableHead label="Objekt" field="property" currentField={sortField} currentDir={sortDir} onSort={onSort} className="hidden md:table-cell" />
+            <SortableTableHead label="Anreise" field="checkin" currentField={sortField} currentDir={sortDir} onSort={onSort} className="hidden lg:table-cell" />
+            <SortableTableHead label="Abreise" field="checkout" currentField={sortField} currentDir={sortDir} onSort={onSort} className="hidden lg:table-cell" />
+            <SortableTableHead label="Betrag" field="amount" currentField={sortField} currentDir={sortDir} onSort={onSort} className="text-right" />
             <TableHead>Status</TableHead>
             <TableHead className="hidden sm:table-cell">Formular</TableHead>
             <TableHead className="text-right">Aktion</TableHead>

@@ -110,6 +110,7 @@ export async function POST(request: Request) {
           checkout_date,
           total_amount,
           num_guests,
+          cleaning_fee,
           booking_status,
           property_id,
           properties ( name, display_name )
@@ -193,6 +194,7 @@ export async function POST(request: Request) {
           checkout_date: string
           total_amount: number
           num_guests: number
+          cleaning_fee: number | null
           property_id: string
           properties: { name: string; display_name?: string | null } | { name: string; display_name?: string | null }[] | null
         }
@@ -234,6 +236,7 @@ export async function POST(request: Request) {
           totalAmount: Number(bk.total_amount),
           numGuests: bk.num_guests,
           cityTax,
+          cleaningFee: bk.cleaning_fee ? Number(bk.cleaning_fee) : null,
           guestBillingData,
         })
 

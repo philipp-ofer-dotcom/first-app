@@ -101,6 +101,7 @@ export function buildLexwarePayload(params: {
   totalAmount: number
   numGuests: number
   cityTax?: CityTaxData | null
+  cleaningFee?: number | null
   guestBillingData?: GuestBillingData | null
 }): LexwareInvoicePayload {
   const {
@@ -113,6 +114,7 @@ export function buildLexwarePayload(params: {
     totalAmount,
     numGuests,
     cityTax,
+    cleaningFee,
     guestBillingData,
   } = params
 
@@ -134,14 +136,16 @@ export function buildLexwarePayload(params: {
   }
 
   // Calculate city tax total (if active)
-  // City tax is included in the Smoobu totalAmount — so we subtract it from the
-  // accommodation line to avoid double-counting on the invoice.
+  // Both city tax and cleaning fee are included in the Smoobu totalAmount — subtract
+  // them from the accommodation line to avoid double-counting on the invoice.
   let cityTaxTotal = 0
   if (cityTax?.isActive && cityTax.amountPerPersonNight > 0) {
     cityTaxTotal = Math.round(numGuests * nights * cityTax.amountPerPersonNight * 100) / 100
   }
 
-  const accommodationTotal = Math.max(0, totalAmount - cityTaxTotal)
+  const cleaningFeeAmount = cleaningFee && cleaningFee > 0 ? Math.round(cleaningFee * 100) / 100 : 0
+
+  const accommodationTotal = Math.max(0, totalAmount - cityTaxTotal - cleaningFeeAmount)
   const nightlyRate = nights > 0 ? accommodationTotal / nights : accommodationTotal
 
   const lineItems: LexwareLineItem[] = [
@@ -161,6 +165,22 @@ export function buildLexwarePayload(params: {
       discountPercentage: 0,
     },
   ]
+
+  if (cleaningFeeAmount > 0) {
+    lineItems.push({
+      type: "custom",
+      name: "Endreinigung",
+      description: `${checkinFmt} – ${checkoutFmt}`,
+      quantity: 1,
+      unitName: "Pauschale",
+      unitPrice: {
+        currency: "EUR",
+        netAmount: cleaningFeeAmount,
+        taxRatePercentage: 0,
+      },
+      discountPercentage: 0,
+    })
+  }
 
   if (cityTax?.isActive && cityTaxTotal > 0) {
     lineItems.push({

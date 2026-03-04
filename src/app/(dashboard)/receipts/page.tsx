@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
+import { SortableTableHead, type SortDirection } from "@/components/sortable-table-head"
 import {
   Upload, Trash2, Eye, RefreshCw, Download, Loader2, Terminal,
   SendToBack, CheckSquare, Square, AlertCircle,
@@ -113,6 +114,16 @@ export default function ReceiptsPage() {
   const [receipts, setReceipts] = useState<Receipt[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabFilter>("all")
+  const [sortField, setSortField] = useState<string | null>(null)
+  const [sortDir, setSortDir] = useState<SortDirection>(null)
+
+  function toggleSort(field: string) {
+    if (sortField === field) {
+      if (sortDir === "asc") setSortDir("desc")
+      else if (sortDir === "desc") { setSortDir(null); setSortField(null) }
+      else setSortDir("asc")
+    } else { setSortField(field); setSortDir("asc") }
+  }
   const [uploadOpen, setUploadOpen] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [viewingId, setViewingId] = useState<string | null>(null)
@@ -197,8 +208,21 @@ export default function ReceiptsPage() {
     await fetchReceipts()
   }
 
-  const filteredReceipts =
-    activeTab === "all" ? receipts : receipts.filter((r) => r.platform === activeTab)
+  const filteredReceipts = useMemo(() => {
+    const filtered = activeTab === "all" ? receipts : receipts.filter((r) => r.platform === activeTab)
+    if (!sortField || !sortDir) return filtered
+    return [...filtered].sort((a, b) => {
+      let aVal: string | number = ""
+      let bVal: string | number = ""
+      if (sortField === "platform") { aVal = a.platform; bVal = b.platform }
+      else if (sortField === "bookingReference") { aVal = a.bookingReference ?? ""; bVal = b.bookingReference ?? "" }
+      else if (sortField === "date") { aVal = a.receiptDate ?? ""; bVal = b.receiptDate ?? "" }
+      else if (sortField === "amount") { aVal = a.amount ?? 0; bVal = b.amount ?? 0 }
+      else if (sortField === "status") { aVal = a.status; bVal = b.status }
+      if (typeof aVal === "number" && typeof bVal === "number") return sortDir === "asc" ? aVal - bVal : bVal - aVal
+      return sortDir === "asc" ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal))
+    })
+  }, [receipts, activeTab, sortField, sortDir])
 
   const transferableInView = filteredReceipts.filter((r) => canTransfer(r.status))
   const allSelected =
@@ -373,13 +397,13 @@ export default function ReceiptsPage() {
                             disabled={transferableInView.length === 0}
                           />
                         </TableHead>
-                        <TableHead>Plattform</TableHead>
-                        <TableHead>Buchungsreferenz</TableHead>
+                        <SortableTableHead label="Plattform" field="platform" currentField={sortField} currentDir={sortDir} onSort={toggleSort} />
+                        <SortableTableHead label="Buchungsreferenz" field="bookingReference" currentField={sortField} currentDir={sortDir} onSort={toggleSort} />
                         <TableHead className="hidden md:table-cell">Gast / Objekt</TableHead>
-                        <TableHead className="hidden lg:table-cell">Datum</TableHead>
-                        <TableHead className="hidden lg:table-cell">Betrag</TableHead>
+                        <SortableTableHead label="Datum" field="date" currentField={sortField} currentDir={sortDir} onSort={toggleSort} className="hidden lg:table-cell" />
+                        <SortableTableHead label="Betrag" field="amount" currentField={sortField} currentDir={sortDir} onSort={toggleSort} className="hidden lg:table-cell" />
                         <TableHead className="hidden sm:table-cell">Datei</TableHead>
-                        <TableHead>Status</TableHead>
+                        <SortableTableHead label="Status" field="status" currentField={sortField} currentDir={sortDir} onSort={toggleSort} />
                         <TableHead className="text-right">Aktionen</TableHead>
                       </TableRow>
                     </TableHeader>

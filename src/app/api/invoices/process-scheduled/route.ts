@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { decrypt } from "@/lib/encryption"
 import { buildLexwarePayload, type CityTaxData, type GuestBillingData } from "@/lib/invoice-utils"
+import { logger } from "@/lib/logger"
 
 // This endpoint is called by:
 //   - Vercel Cron Jobs (automatic, every 15 min after deploy)
@@ -82,6 +83,7 @@ export async function POST(request: Request) {
       .single()
 
     if (intError || !integration) {
+      await logger.error("invoice", "process_scheduled", "Kein Lexware API-Key hinterlegt — Verarbeitung abgebrochen")
       return NextResponse.json(
         { error: "Kein Lexware API-Key hinterlegt" },
         { status: 400 }
@@ -127,6 +129,12 @@ export async function POST(request: Request) {
       errors: 0,
     }
 
+    if ((dueInvoices ?? []).length > 0) {
+      await logger.info("invoice", "process_scheduled_start", `Verarbeite ${dueInvoices!.length} fällige Rechnung(en)`, {
+        details: { count: dueInvoices!.length },
+      })
+    }
+
     for (const invoice of dueInvoices ?? []) {
       const booking = Array.isArray(invoice.bookings)
         ? invoice.bookings[0]
@@ -143,6 +151,10 @@ export async function POST(request: Request) {
           .from("invoices")
           .update({ status: "cancelled", updated_at: new Date().toISOString() })
           .eq("id", invoice.id)
+        await logger.warn("invoice", "invoice_skipped", "Buchung storniert — Rechnung übersprungen", {
+          entityType: "invoice", entityId: invoice.id,
+          details: { bookingId: invoice.booking_id },
+        })
         results.skipped++
         continue
       }
@@ -158,6 +170,10 @@ export async function POST(request: Request) {
             updated_at: new Date().toISOString(),
           })
           .eq("id", invoice.id)
+        await logger.warn("invoice", "invoice_skipped", "Buchungsbetrag ist 0 — Rechnung übersprungen", {
+          entityType: "invoice", entityId: invoice.id,
+          details: { bookingId: invoice.booking_id },
+        })
         results.skipped++
         continue
       }
@@ -237,6 +253,19 @@ export async function POST(request: Request) {
           })
           .eq("id", invoice.id)
 
+        await logger.info("invoice", "invoice_created", `Rechnung ${invoiceNumber} erfolgreich in Lexware erstellt`, {
+          entityType: "invoice", entityId: invoice.id,
+          details: {
+            lexwareInvoiceId: invoiceId,
+            invoiceNumber,
+            guestName: bk.guest_name,
+            property: propertyName,
+            amount: bk.total_amount,
+            checkin: bk.checkin_date,
+            checkout: bk.checkout_date,
+          },
+        })
+
         results.created++
 
         // Rate limiting: max 2 req/s → wait 600ms between calls
@@ -255,6 +284,11 @@ export async function POST(request: Request) {
           })
           .eq("id", invoice.id)
 
+        await logger.error("invoice", "invoice_creation_failed", `Fehler beim Erstellen der Rechnung: ${errorMsg}`, {
+          entityType: "invoice", entityId: invoice.id,
+          details: { bookingId: invoice.booking_id, error: errorMsg },
+        })
+
         results.errors++
 
         // Still wait between calls even on error
@@ -264,9 +298,19 @@ export async function POST(request: Request) {
       results.processed++
     }
 
+    if (results.processed > 0) {
+      await logger.info("invoice", "process_scheduled_done", `Verarbeitung abgeschlossen: ${results.created} erstellt, ${results.skipped} übersprungen, ${results.errors} Fehler`, {
+        details: results,
+      })
+    }
+
     return NextResponse.json({ success: true, ...results })
   } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : "Unbekannter Fehler"
     console.error("POST /api/invoices/process-scheduled error:", err)
+    await logger.error("invoice", "process_scheduled_failed", `Kritischer Fehler im Scheduler: ${errorMsg}`, {
+      details: { error: errorMsg },
+    })
     return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 })
   }
 }

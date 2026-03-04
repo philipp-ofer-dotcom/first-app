@@ -12,6 +12,7 @@ import {
   LogOut,
   Receipt,
   FolderOpen,
+  Activity,
 } from "lucide-react"
 
 import {
@@ -49,6 +50,11 @@ const navItems = [
     title: "Dokumente",
     href: "/documents",
     icon: FolderOpen,
+  },
+  {
+    title: "Aktivitäten",
+    href: "/activity",
+    icon: Activity,
   },
   {
     title: "Integrationen",

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { calculateScheduledFor } from "@/lib/invoice-utils"
 import type { TimingType, InvoiceMode } from "@/lib/types"
+import { logger } from "@/lib/logger"
 
 // This endpoint is public (called by Smoobu) — uses service role for DB writes
 function getServiceSupabase() {
@@ -75,8 +76,24 @@ export async function POST(request: Request) {
 
     if (bookingError || !booking) {
       console.error("Webhook: booking upsert failed", bookingError)
+      await logger.error("webhook", "booking_upsert_failed", "Smoobu Webhook: Buchung konnte nicht gespeichert werden", {
+        details: { smoobuBookingId: String(data.id), error: bookingError?.message },
+      })
       return NextResponse.json({ error: "DB Fehler" }, { status: 500 })
     }
+
+    await logger.info("webhook", "booking_received", `Smoobu Webhook: Buchung ${action === "newReservation" ? "neu" : "aktualisiert"} — ${data["guest-name"] || "Unbekannt"}`, {
+      entityType: "booking", entityId: booking.id,
+      details: {
+        smoobuBookingId: String(data.id),
+        action,
+        guestName: data["guest-name"],
+        property: property.name,
+        checkin: data.arrival,
+        checkout: data.departure,
+        amount: price,
+      },
+    })
 
     // Create invoice if not yet exists
     const { data: existing } = await supabase
@@ -126,12 +143,21 @@ export async function POST(request: Request) {
           status,
           scheduled_for: scheduledFor,
         })
+
+        await logger.info("invoice", "invoice_scheduled", `Rechnung für Buchung ${data["guest-name"] || "Unbekannt"} eingeplant (Status: ${status})`, {
+          entityType: "invoice", entityId: booking.id,
+          details: { status, scheduledFor, mode: timing?.invoice_mode ?? "no-timing" },
+        })
       }
     }
 
     return NextResponse.json({ received: true, bookingId: booking.id })
   } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : "Unbekannter Fehler"
     console.error("POST /api/webhooks/smoobu error:", err)
+    await logger.error("webhook", "webhook_failed", `Smoobu Webhook: Kritischer Fehler — ${errorMsg}`, {
+      details: { error: errorMsg },
+    })
     return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 })
   }
 }

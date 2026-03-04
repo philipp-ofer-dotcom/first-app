@@ -73,10 +73,12 @@ export interface CityTaxConfig {
   validFrom: string
   ageGroups: AgeGroup[]
   createdAt: string
+  isFuture?: boolean
 }
 
 export interface PropertyWithCityTax extends Property {
   cityTaxConfig: CityTaxConfig | null
+  allCityTaxConfigs?: CityTaxConfig[]
 }
 
 // PROJ-3: Automatische Rechnungserstellung (Smoobu → Lexware)

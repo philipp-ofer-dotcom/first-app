@@ -1,6 +1,51 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase-server"
 
+// DELETE /api/city-tax/[propertyId]/history?configId=xxx
+// Deletes a FUTURE city tax config entry (past/current entries are protected)
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ propertyId: string }> }
+) {
+  try {
+    const supabase = await createServerSupabaseClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: "Nicht authentifiziert" }, { status: 401 })
+
+    const { propertyId } = await params
+    const configId = request.nextUrl.searchParams.get("configId")
+    if (!configId) return NextResponse.json({ error: "configId fehlt" }, { status: 400 })
+
+    const today = new Date().toISOString().split("T")[0]
+
+    const { data: cfg, error: fetchErr } = await supabase
+      .from("city_tax_configs")
+      .select("id, property_id, valid_from")
+      .eq("id", configId)
+      .eq("property_id", propertyId)
+      .single()
+
+    if (fetchErr || !cfg) {
+      return NextResponse.json({ error: "Eintrag nicht gefunden" }, { status: 404 })
+    }
+
+    if (cfg.valid_from <= today) {
+      return NextResponse.json(
+        { error: "Nur zukünftige Einträge können gelöscht werden" },
+        { status: 400 }
+      )
+    }
+
+    await supabase.from("city_tax_age_groups").delete().eq("city_tax_config_id", configId)
+    await supabase.from("city_tax_configs").delete().eq("id", configId)
+
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error("DELETE /api/city-tax/[propertyId]/history error:", err)
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 })
+  }
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ propertyId: string }> }

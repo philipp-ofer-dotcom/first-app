@@ -133,7 +133,16 @@ export function buildLexwarePayload(params: {
     countryCode: billingAddr?.countryCode ?? "DE",
   }
 
-  const nightlyRate = nights > 0 ? totalAmount / nights : totalAmount
+  // Calculate city tax total (if active)
+  // City tax is included in the Smoobu totalAmount — so we subtract it from the
+  // accommodation line to avoid double-counting on the invoice.
+  let cityTaxTotal = 0
+  if (cityTax?.isActive && cityTax.amountPerPersonNight > 0) {
+    cityTaxTotal = Math.round(numGuests * nights * cityTax.amountPerPersonNight * 100) / 100
+  }
+
+  const accommodationTotal = Math.max(0, totalAmount - cityTaxTotal)
+  const nightlyRate = nights > 0 ? accommodationTotal / nights : accommodationTotal
 
   const lineItems: LexwareLineItem[] = [
     {
@@ -153,9 +162,7 @@ export function buildLexwarePayload(params: {
     },
   ]
 
-  if (cityTax?.isActive && cityTax.amountPerPersonNight > 0) {
-    const cityTaxTotal =
-      Math.round(numGuests * nights * cityTax.amountPerPersonNight * 100) / 100
+  if (cityTax?.isActive && cityTaxTotal > 0) {
     lineItems.push({
       type: "custom",
       name: cityTax.taxLabel || "Kurtaxe",
@@ -165,7 +172,7 @@ export function buildLexwarePayload(params: {
       unitPrice: {
         currency: "EUR",
         netAmount: cityTaxTotal,
-        taxRatePercentage: 0,
+        taxRatePercentage: 0,  // City tax is VAT-exempt (0%)
       },
       discountPercentage: 0,
     })

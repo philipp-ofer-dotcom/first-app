@@ -70,6 +70,7 @@ export interface LexwareInvoicePayload {
   voucherDate: string
   address: LexwareAddress
   lineItems: LexwareLineItem[]
+  totalPrice: { currency: "EUR" }
   taxConditions: { taxType: string }
   shippingConditions: { shippingType: string }
   remark?: string
@@ -200,9 +201,10 @@ export function buildLexwarePayload(params: {
 
   return {
     type: "invoice",
-    voucherDate: new Date().toISOString().split("T")[0],
+    voucherDate: new Date().toISOString(),
     address,
     lineItems,
+    totalPrice: { currency: "EUR" },
     taxConditions: { taxType: "vatfree" },
     shippingConditions: { shippingType: "none" },
     remark: `Smoobu Buchungs-ID: ${smoobuBookingId}`,

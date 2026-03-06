@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase-server"
 import { decrypt } from "@/lib/encryption"
 import { buildLexwarePayload, type CityTaxData, type GuestBillingData } from "@/lib/invoice-utils"
+import { logger } from "@/lib/logger"
 
 async function createLexwareInvoice(
   apiKey: string,
@@ -20,7 +21,7 @@ async function createLexwareInvoice(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "")
-    throw new Error(`Lexware API Fehler: HTTP ${res.status} — ${text.slice(0, 200)}`)
+    throw new Error(`Lexware API Fehler: HTTP ${res.status} — ${text.slice(0, 500)}`)
   }
 
   const data = await res.json()
@@ -52,7 +53,7 @@ export async function POST(
         `
         id, smoobu_booking_id, guest_name, guest_address,
         checkin_date, checkout_date, total_amount, num_guests,
-        booking_status, property_id,
+        booking_status, property_id, cleaning_fee,
         properties ( name, display_name )
       `
       )
@@ -174,13 +175,27 @@ export async function POST(
         totalAmount,
         numGuests: booking.num_guests,
         cityTax,
+        cleaningFee: booking.cleaning_fee ? Number(booking.cleaning_fee) : null,
         guestBillingData,
       })
 
-      const { invoiceId, invoiceNumber } = await createLexwareInvoice(
-        lexwareApiKey,
-        payload
-      )
+      let invoiceId: string, invoiceNumber: string
+      try {
+        const result = await createLexwareInvoice(lexwareApiKey, payload)
+        invoiceId = result.invoiceId
+        invoiceNumber = result.invoiceNumber
+      } catch (lexErr) {
+        // Re-throw but first log the payload for debugging
+        await logger.error("invoice", "lexware_api_error", lexErr instanceof Error ? lexErr.message : "Lexware Fehler", {
+          entityType: "invoice",
+          entityId: invoice.id,
+          details: {
+            bookingId,
+            payload: JSON.stringify(payload).slice(0, 1000),
+          },
+        })
+        throw lexErr
+      }
 
       await supabase
         .from("invoices")
@@ -192,6 +207,17 @@ export async function POST(
           updated_at: new Date().toISOString(),
         })
         .eq("id", invoice.id)
+
+      await logger.info("invoice", "invoice_created", `Rechnung erstellt: ${invoiceNumber}`, {
+        entityType: "invoice",
+        entityId: invoice.id,
+        details: {
+          bookingId,
+          smoobuBookingId: booking.smoobu_booking_id,
+          lexwareInvoiceId: invoiceId,
+          invoiceNumber,
+        },
+      })
 
       return NextResponse.json({
         success: true,
@@ -210,6 +236,16 @@ export async function POST(
           updated_at: new Date().toISOString(),
         })
         .eq("id", invoice.id)
+
+      await logger.error("invoice", "invoice_create_failed", `Rechnung fehlgeschlagen: ${errorMsg}`, {
+        entityType: "invoice",
+        entityId: invoice.id,
+        details: {
+          bookingId,
+          smoobuBookingId: booking.smoobu_booking_id,
+          errorMsg,
+        },
+      })
 
       return NextResponse.json({ error: errorMsg }, { status: 502 })
     }
